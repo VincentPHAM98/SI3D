@@ -172,7 +172,7 @@ tutos = {
     "tuto6GL",
     "tuto6GL_buffer",
     "tuto_framebuffer",
-    "tuto_uniform_buffers",
+    "tuto_uniforbuffers",
     "tuto_storage",
     "tuto_storage_buffer",
     "tuto_storage_texture",
