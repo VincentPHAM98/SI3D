@@ -28,13 +28,16 @@ struct Buffers
         auto groups= mesh.groups();
         std::vector<int> material_idx;
         for(int i= 0; i < int(groups.size()); i++) {
-            std::cout << "group n: " << groups[i].n << std::endl;
-            for (int j = 0 ; j < groups[i].n; ++j)
+            for (int j = 0 ; j < groups[i].n; ++j) {
                 material_idx.push_back(groups[i].material_index);
+                std::cout << "idx: " << groups[i].material_index << std::endl;
+            }
         }
 
 
-        size_t size = mesh.vertex_buffer_size() + mesh.normal_buffer_size() + material_idx.size();
+        size_t size = mesh.vertex_buffer_size() 
+            + mesh.normal_buffer_size() 
+            + material_idx.size() * sizeof(int);
         // cree et configure le vertex array object: conserve la description des attributs de sommets
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
@@ -70,8 +73,8 @@ struct Buffers
         
         // attribut 4 material
         offset += size;
-        size = material_idx.size();
-        glBufferSubData(GL_ARRAY_BUFFER, offset, size, &material_idx[0]);
+        size = material_idx.size() * sizeof(int);
+        glBufferSubData(GL_ARRAY_BUFFER, offset, size, &material_idx.front());
         glVertexAttribIPointer(4, 
             1, GL_UNSIGNED_INT,    // size et type, normal est un vec3 dans le vertex shader
             0,              // stride 0, les valeurs sont les unes a la suite des autres
@@ -119,8 +122,10 @@ public:
         // copier les matieres utilisees
         const Materials& materials= mesh.materials();
         assert(materials.count() <= int(m_colors.size()));
-        for(int i= 0; i < materials.count(); i++)
+        for(int i= 0; i < materials.count(); i++) {
             m_colors[i]= materials.material(i).diffuse;
+            std::cout << "m_colors[i]: " << m_colors[i].r << "," << m_colors[i].g << "," << m_colors[i].b << std::endl;
+        }
 
 
         // etat openGL par defaut
