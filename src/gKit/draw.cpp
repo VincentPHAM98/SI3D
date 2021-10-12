@@ -4,18 +4,12 @@
 #include "program.h"
 #include "uniforms.h"
 
+//avec texture
 void draw( Mesh& m, const Transform& model, const Transform& view, const Transform& projection, const GLuint texture )
 {
     DrawParam param;
     param.model(model).view(view).projection(projection);
     param.texture(texture);
-    param.draw(m);
-}
-
-void draw( Mesh& m, const Transform& model, const Transform& view, const Transform& projection )
-{
-    DrawParam param;
-    param.model(model).view(view).projection(projection);
     param.draw(m);
 }
 
@@ -34,20 +28,86 @@ void draw( Mesh& m, Orbiter& camera, const GLuint texture )
     draw(m, Identity(), camera, texture);
 }
 
-void draw( Mesh& m, Orbiter& camera )
+
+// sans texture
+void draw( Mesh& m, const Transform& model, const Transform& view, const Transform& projection )
 {
-    draw(m, Identity(), camera, 0);
+    DrawParam param;
+    param.model(model).view(view).projection(projection);
+    param.draw(m);
 }
 
 void draw( Mesh& m, const Transform& model, Orbiter& camera )
 {
-    draw(m, model, camera, 0);
+    // recupere les transformations
+    Transform view= camera.view();
+    Transform projection= camera.projection(window_width(), window_height(), 45);
+    
+    // affiche l'objet
+    draw(m, model, view, projection);
 }
+
+void draw( Mesh& m, Orbiter& camera )
+{
+    // affiche l'objet
+    draw(m, Identity(), camera);
+}
+
+
+// groupe de triangles + matiere, sans texture
+void draw( const TriangleGroup& group, Mesh& m, const Transform& model, const Transform& view, const Transform& projection )
+{
+    DrawParam param;
+    param.model(model).view(view).projection(projection);
+    param.draw(group, m);
+}    
+
+void draw( const TriangleGroup& group, Mesh& m, const Transform& model, Orbiter& camera )
+{
+    // recupere les transformations
+    Transform view= camera.view();
+    Transform projection= camera.projection(window_width(), window_height(), 45);
+    
+    // dessine les triangles
+    draw(group, m, model, view, projection);
+}
+
+void draw( const TriangleGroup& group, Mesh& m, Orbiter& camera )
+{
+    draw(group, m, Identity(), camera);
+}
+
+
+// groupe de triangles + matiere et texture
+void draw( const TriangleGroup& group, Mesh& m, const Transform& model, const Transform& view, const Transform& projection, const GLuint texture )
+{
+    DrawParam param;
+    param.model(model).view(view).projection(projection);
+    param.texture(texture);    
+    param.draw(group, m);
+}
+
+void draw( const TriangleGroup& group, Mesh& m, const Transform& model, Orbiter& camera, const GLuint texture )
+{
+    // recupere les transformations
+    Transform view= camera.view();
+    Transform projection= camera.projection(window_width(), window_height(), 45);
+    
+    // dessine les triangles
+    draw(group, m, model, view, projection, texture);
+}
+
+void draw( const TriangleGroup& group, Mesh& m, Orbiter& camera, const GLuint texture )
+{
+    draw(group, m, Identity(), camera, texture);
+}
+
 
 void draw( Mesh& m, DrawParam& param )
 {
     param.draw(m);
 }
+
 
 GLuint DrawParam::create_program( const GLenum primitives, const bool use_texcoord, const bool use_normal, const bool use_color, const bool use_light, const bool use_alpha_test )
 {
@@ -124,8 +184,8 @@ void DrawParam::draw( const TriangleGroup& group, Mesh& mesh )
     GLuint program= create_program(mesh.primitives(), use_texcoord, use_normal, use_color, m_use_light, m_use_alpha_test);
     
     glUseProgram(program);
-    if(group.material_index != -1 && group.material_index < mesh.materials().count())
-        program_uniform(program, "mesh_color", mesh.materials().material(group.material_index).diffuse);
+    if(group.index != -1 && group.index < mesh.materials().count())
+        program_uniform(program, "mesh_color", mesh.materials().material(group.index).diffuse);
     else
         program_uniform(program, "mesh_color", mesh.materials().default_material().diffuse);
     

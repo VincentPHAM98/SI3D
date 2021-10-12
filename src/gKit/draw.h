@@ -28,6 +28,23 @@ void draw( Mesh& m, Orbiter& camera, const GLuint texture );
 //! dessine l'objet avec une transformation model. les transformations vue et projection sont celles de la camera. applique une texture a la surface de l'objet. ne fonctionne que si les coordonnees de textures sont fournies avec tous les sommets de l'objet.
 void draw( Mesh& m, const Transform& model, Orbiter& camera, const GLuint texture );
 
+//! \name dessine des triangles d'un objet associés à une matière. cf gestion des matieres, Mesh::groups() et les classes Materials et Material.
+//@{
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur. 
+void draw( const TriangleGroup& group, Mesh& mesh, Orbiter& camera );
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur.
+void draw( const TriangleGroup& group, Mesh& mesh, const Transform& model, Orbiter& camera );
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur.
+void draw( const TriangleGroup& group, Mesh& mesh, const Transform& model, const Transform& view, const Transform& projection );
+
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur et une texture. ne fonctionne que si les coordonnees de textures sont fournies avec tous les sommets de l'objet.
+void draw( const TriangleGroup& group, Mesh& mesh, Orbiter& camera, const GLuint texture );
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur et une texture. ne fonctionne que si les coordonnees de textures sont fournies avec tous les sommets de l'objet.
+void draw( const TriangleGroup& group, Mesh& mesh, const Transform& model, Orbiter& camera, const GLuint texture );
+//! dessine un groupe de triangles de l'objet associe a une matiere / couleur et une texture. ne fonctionne que si les coordonnees de textures sont fournies avec tous les sommets de l'objet.
+void draw( const TriangleGroup& group, Mesh& mesh, const Transform& model, const Transform& view, const Transform& projection, const GLuint texture );
+//@}
+    
 /*! representation des options / parametres d'un draw.
     permet de donner tous les parametres d'un draw de maniere flexible.
 
@@ -73,7 +90,7 @@ public:
     //! plaque une texture a la surface de l'objet.
     DrawParam& texture( const GLuint t ) { m_use_texture= true; m_texture= t; return *this; }
 
-    //! texture semi transparente, si l'alpha du texel est plus petit que alpha_min, le pixel est transparent. desactive aussi les calculs d'eclairage.
+    //! texture semi transparente, si l'alpha du texel est plus petit que alpha_min, le pixel est transparent. desactive aussi les calculs d'eclairage. utiliser alpha(0) pour desactiver le test.
     DrawParam& alpha( const float a=0.f ) { m_use_alpha_test= (a>0.f); m_alpha_min= a; return *this; }
 
     //! Use light: on/off
@@ -134,6 +151,7 @@ public:
     //! renvoie un shader program compile.
     PipelineProgram *find( const char *filename, const char *definitions= "" )
     {
+        // todo peut etre remplacer par une unordered_map ? mais il y a peu de shaders utilise normalement...
         for(auto program : m_programs)
         {
             if(program->filename == filename && program->definitions == definitions)
@@ -157,7 +175,7 @@ public:
     }
     
 protected:
-    //! destructeur prive. le singleton ne sera detruit qu'a la fin de l'application... doit etre detruit tant que le contexte openGL existe.
+    //! constructeur prive. 
     PipelineCache( ) : m_programs() {}
     
     std::vector<PipelineProgram *> m_programs;
