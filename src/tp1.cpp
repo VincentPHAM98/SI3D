@@ -34,7 +34,7 @@ struct Buffers
         {
             for (int j = 0; j < groups[i].n; ++j)
             {
-                material_idx.push_back(groups[i].material_index);
+                material_idx.push_back(groups[i].index);
             }
         }
 
