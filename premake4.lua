@@ -112,7 +112,8 @@ end
 projects = {
     "shader_kit",
     "image_viewer",
-    "tp1"
+    "tp1",
+    "tp2"
 }
 
 for i, name in ipairs(projects) do
