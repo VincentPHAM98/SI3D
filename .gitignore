@@ -1,4 +1,7 @@
 *.make
+Makefile
 bin/
 obj/
 data/assets
+*.png
+*.hdr
