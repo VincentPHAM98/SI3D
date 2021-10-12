@@ -58,6 +58,8 @@ void main( )
     if(color.a < 0.3)
         discard;
 
+    color = color * 0.5 + materials[vertex_material] * 0.5;
+
     fragment_color= color * pow(cos_theta, 0.5);
 }
 
