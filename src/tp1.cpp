@@ -218,6 +218,7 @@ public:
         program_print_errors(m_program);
 
         m_colors.resize(256);
+        m_textures.resize(256);
 
         // copier les matieres utilisees
         const Materials &materials = mesh.materials();
@@ -226,6 +227,7 @@ public:
         for (int i = 0; i < materials.count(); i++)
         {
             m_colors[i] = materials.material(i).diffuse;
+            m_textures[i] = materials.material(i).diffuse_texture;
         }
 
         std::vector<ImageData> images;
@@ -269,6 +271,12 @@ public:
     // dessiner une nouvelle image
     int render()
     {
+
+        if (key_state('r'))
+        {
+            clear_key_state('r');
+            reload_program(m_program, "src/shader/tp1_color.glsl");
+        }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // deplace la camera
@@ -309,6 +317,9 @@ public:
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
+        location = glGetUniformLocation(m_program, "textures");
+        glUniform1iv(location, m_textures.size(), &m_textures[0]);
+
         glBindVertexArray(m_objet.vao);
         // dessiner les triangles du groupe
         glDrawArrays(GL_TRIANGLES, 0, m_objet.vertex_count);
@@ -324,7 +335,7 @@ protected:
     GLuint m_texture_array;
     GLuint m_program;
     std::vector<Color> m_colors;
-    std::vector<GLuint> m_textures;
+    std::vector<int> m_textures;
 };
 
 int main(int argc, char **argv)

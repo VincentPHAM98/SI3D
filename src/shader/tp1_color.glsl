@@ -41,7 +41,8 @@ in vec3 vertex_normal;
 flat in uint vertex_material;	// !! decoration flat, le varying est marque explicitement comme non interpolable  !!
 
 #define MAX_MATERIALS 256 
-uniform vec4 materials[MAX_MATERIALS];
+uniform int materials[MAX_MATERIALS];
+uniform int textures[MAX_MATERIALS];
 
 uniform sampler2DArray texture_array;    //< acces au tableau de textures...
 
@@ -51,14 +52,14 @@ void main( )
     vec3 l= normalize(-vertex_position);        // la camera est la source de lumiere.
     vec3 n= normalize(vertex_normal);
     float cos_theta= max(0, dot(n, l));
-    
+    int tex_idx = textures[vertex_material];
     // recupere la couleur de la matiere du triangle, en fonction de son indice.
     // vec4 color= materials[vertex_material];
-    vec4 color= texture(texture_array, vec3(vertex_texcoord, vertex_material));
+    vec4 color= texture(texture_array, vec3(vertex_texcoord, tex_idx));
+    // color = (color + materials[vertex_material]) * 0.5;
     if(color.a < 0.3)
         discard;
 
-    color = color * 0.5 + materials[vertex_material] * 0.5;
 
     fragment_color= color * pow(cos_theta, 0.5);
 }
