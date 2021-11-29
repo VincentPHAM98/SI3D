@@ -9,82 +9,6 @@
 #include "uniforms.h"
 #include "wavefront.h"
 
-// Orbiter avec un mesh pour dessiner son frustum
-class FrustumOrbiter : public Orbiter {
-   public:
-    Mesh m;
-    FrustumOrbiter() : Orbiter() {
-        m.create(GL_LINE_LOOP);
-        projection(window_width(), window_height(), 45);
-    }
-
-    void traceFrustum() {
-        m.clear();
-        m.color(Green());
-        Transform proj2World = view().inverse() * projection().inverse();
-        Point a, b, c, d, A, B, C, D;
-        a = proj2World(Point(-1, 1, -1));
-        b = proj2World(Point(1, 1, -1));
-        c = proj2World(Point(1, -1, -1));
-        d = proj2World(Point(-1, -1, -1));
-        A = proj2World(Point(-1, 1, 1));
-        B = proj2World(Point(1, 1, 1));
-        C = proj2World(Point(1, -1, 1));
-        D = proj2World(Point(-1, -1, 1));
-        // quadrilatère proche
-        m.restart_strip();
-        m.vertex(a);
-        m.vertex(b);
-        m.vertex(c);
-        m.vertex(d);
-        // quadrilatère éloigné
-        m.restart_strip();
-        m.vertex(A);
-        m.vertex(B);
-        m.vertex(C);
-        m.vertex(D);
-        // arêtes
-        m.restart_strip();
-        m.vertex(a);
-        m.vertex(A);
-        m.restart_strip();
-        m.vertex(b);
-        m.vertex(B);
-        m.restart_strip();
-        m.vertex(c);
-        m.vertex(C);
-        m.restart_strip();
-        m.vertex(d);
-        m.vertex(D);
-    }
-
-    //! observe le point center a une distance size.
-    void lookat(const Point &center, const float size) {
-        Orbiter::lookat(center, size);
-        traceFrustum();
-    }
-
-    //! change le point de vue / la direction d'observation.
-    void rotation(const float x, const float y) {
-        Orbiter::rotation(x, y);
-        traceFrustum();
-    }
-    //! deplace le centre / le point observe.
-    void translation(const float x, const float y) {
-        Orbiter::translation(x, y);
-        traceFrustum();
-    }
-    //! rapproche / eloigne la camera du centre.
-    void move(const float z) {
-        Orbiter::move(z);
-        traceFrustum();
-    }
-
-    void lookat(const Point &pmin, const Point &pmax) {
-        lookat(center(pmin, pmax), distance(pmin, pmax));
-    }
-};
-
 struct BBox {
     Mesh m;
     Point pmin, pmax;
@@ -100,8 +24,9 @@ struct BBox {
         Point f24 = Point(pmin.x, pmax.y, pmax.z);
 
         m.create(GL_LINES);
-        m.color(Red());
+        m.color(Blue());
         m.vertex(f11);
+        m.color(Red());
         m.vertex(f12);
         m.vertex(f12);
         m.vertex(f13);
@@ -112,19 +37,24 @@ struct BBox {
         m.vertex(f21);
         m.vertex(f22);
         m.vertex(f22);
+        m.color(Green());
         m.vertex(f23);
         m.vertex(f23);
+        m.color(Red());
         m.vertex(f24);
         m.vertex(f24);
         m.vertex(f21);
 
         m.vertex(f24);
         m.vertex(f14);
+        m.color(Green());
         m.vertex(f23);
+        m.color(Red());
         m.vertex(f13);
         m.vertex(f22);
         m.vertex(f12);
         m.vertex(f21);
+        m.color(Blue());
         m.vertex(f11);
     }
 
@@ -158,7 +88,137 @@ struct BBox {
         return *this;
     }
 
+    bool isInside(const Point &p) {
+        return (
+            p.x >= pmin.x && p.x <= pmax.x ||
+            p.y >= pmin.y && p.y <= pmax.y ||
+            p.z >= pmin.z && p.z <= pmax.z);
+    }
+
     float centroid(const int axis) const { return (pmin(axis) + pmax(axis)) / 2; }
+};
+
+struct Frustum {
+    Mesh m_mesh;
+    Transform m_view, m_projection;
+
+    Frustum() {}
+
+    Frustum(const Transform &view, const Transform &projection) : m_view(view), m_projection(projection) {
+        m_mesh.create(GL_LINE_LOOP);
+        trace();
+    }
+
+    void trace() {
+        m_mesh.clear();
+        m_mesh.color(Green());
+        Transform proj2World = m_view.inverse() * m_projection.inverse();
+        Point a, b, c, d, A, B, C, D;
+        a = proj2World(Point(-1, 1, -1));
+        b = proj2World(Point(1, 1, -1));
+        c = proj2World(Point(1, -1, -1));
+        d = proj2World(Point(-1, -1, -1));
+        A = proj2World(Point(-1, 1, 1));
+        B = proj2World(Point(1, 1, 1));
+        C = proj2World(Point(1, -1, 1));
+        D = proj2World(Point(-1, -1, 1));
+        // quadrilatère proche
+        m_mesh.restart_strip();
+        m_mesh.vertex(a);
+        m_mesh.vertex(b);
+        m_mesh.vertex(c);
+        m_mesh.vertex(d);
+        // quadrilatère éloigné
+        m_mesh.restart_strip();
+        m_mesh.vertex(A);
+        m_mesh.vertex(B);
+        m_mesh.vertex(C);
+        m_mesh.vertex(D);
+        // arêtes
+        m_mesh.restart_strip();
+        m_mesh.vertex(a);
+        m_mesh.vertex(A);
+        m_mesh.restart_strip();
+        m_mesh.vertex(b);
+        m_mesh.vertex(B);
+        m_mesh.restart_strip();
+        m_mesh.vertex(c);
+        m_mesh.vertex(C);
+        m_mesh.restart_strip();
+        m_mesh.vertex(d);
+        m_mesh.vertex(D);
+    }
+
+    void update(const Transform &view, const Transform &projection) {
+        m_view = view;
+        m_projection = projection;
+        trace();
+    }
+    // p: coordoonnées du monde
+    bool isInside(Point p) {
+        auto vp = m_projection * m_view;
+        p = vp(p);
+        auto coords = std::array<float, 3>{p.x, p.y, p.z};
+        for (auto coord : coords) {
+            if (coord <= -1 || coord >= 1)
+                return false;
+        }
+        return true;
+    }
+
+    bool isInside(const BBox &bbox) {
+        auto vp = m_projection * m_view;
+        // auto vp = m_view * m_projection;
+        auto projPmin = vp(bbox.pmin);
+        auto projPmax = vp(bbox.pmax);
+        std::cout << "projPmin: " << projPmin << std::endl;
+        std::cout << "projPmax: " << projPmax << std::endl;
+        if (projPmin.x > 1. && projPmax.x > 1. ||
+            projPmin.x < -1. && projPmax.x < -1. ||
+            projPmin.y > 1. && projPmax.y > 1. ||
+            projPmin.y < -1. && projPmax.y < -1. ||
+            projPmin.z > 1. && projPmax.z > 1. ||
+            projPmin.z < -1. && projPmax.z < -1.)
+            return false;
+
+        return true;
+    }
+};
+// Orbiter avec un mesh pour dessiner son frustum
+class FrustumOrbiter : public Orbiter {
+   public:
+    Frustum m_frustum;
+
+    FrustumOrbiter() : Orbiter() {
+        m_frustum = Frustum(view(), projection());
+        projection(window_width(), window_height(), 45);
+    }
+
+    //! observe le point center a une distance size.
+    void lookat(const Point &center, const float size) {
+        Orbiter::lookat(center, size);
+        m_frustum.update(view(), projection());
+    }
+    //! change le point de vue / la direction d'observation.
+    void rotation(const float x, const float y) {
+        Orbiter::rotation(x, y);
+        m_frustum.update(view(), projection());
+    }
+    //! deplace le centre / le point observe.
+    void translation(const float x, const float y) {
+        Orbiter::translation(x, y);
+        m_frustum.update(view(), projection());
+    }
+    //! rapproche / eloigne la camera du centre.
+    void move(const float z) {
+        Orbiter::move(z);
+        m_frustum.update(view(), projection());
+    }
+    void lookat(const Point &pmin, const Point &pmax) {
+        lookat(center(pmin, pmax), distance(pmin, pmax));
+    }
+
+    Mesh &getMesh() { return m_frustum.m_mesh; }
 };
 
 class TP : public App {
@@ -168,12 +228,13 @@ class TP : public App {
 
     int init() {
         m_objet = read_mesh("data/robot.obj");
+        m_groups = m_objet.groups();
 
         Point pmin, pmax;
         m_objet.bounds(pmin, pmax);
         m_camera.lookat(pmin, pmax);
-        m_frustum = FrustumOrbiter();
-        m_frustum.lookat(pmin, pmax);
+        m_frustumCamera = FrustumOrbiter();
+        m_frustumCamera.lookat(pmin, pmax);
         m_camera.move(-100.);
 
         m_bbox = BBox(pmin, pmax);
@@ -203,13 +264,16 @@ class TP : public App {
         release_program(m_bbox_program);
         m_objet.release();
         m_bbox.m.release();
-        m_frustum.m.release();
+        m_frustumCamera.getMesh().release();
         return 0;
     }
 
-    int render() {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+    void handleKeyState() {
+        if (key_state('r')) {  // recharger le shader
+            clear_key_state('r');
+            reload_program(m_program, "src/shader/frustum_culling.glsl");
+            reload_program(m_bbox_program, "src/shader/bbox.glsl");
+        }
         int mx, my;
         unsigned int mb = SDL_GetRelativeMouseState(&mx, &my);
         if (mb & SDL_BUTTON(1))  // le bouton gauche est enfonce
@@ -221,43 +285,58 @@ class TP : public App {
 
         // camera frustum deplacement
         if (key_state('i'))
-            m_frustum.translation(0.f, 10.f / (float)window_width());
+            m_frustumCamera.translation(0.f, 10.f / (float)window_width());
         if (key_state('k'))
-            m_frustum.translation(0.f, -10.f / (float)window_width());
+            m_frustumCamera.translation(0.f, -10.f / (float)window_width());
         if (key_state('j'))
-            m_frustum.translation(10.f / (float)window_width(), 0.f);
+            m_frustumCamera.translation(10.f / (float)window_width(), 0.f);
         if (key_state('l'))
-            m_frustum.translation(-10.f / (float)window_width(), 0.f);
+            m_frustumCamera.translation(-10.f / (float)window_width(), 0.f);
         // Zoom
         if (key_state('u'))
-            m_frustum.move(1.f);
+            m_frustumCamera.move(1.f);
         if (key_state('o'))
-            m_frustum.move(-1.f);
+            m_frustumCamera.move(-1.f);
         // Rotation
         if (key_state('h'))
-            m_frustum.rotation(0.f, 1.f);
+            m_frustumCamera.rotation(0.f, 1.f);
         if (key_state('n'))
-            m_frustum.rotation(0.f, -1.f);
+            m_frustumCamera.rotation(0.f, -1.f);
 
         if (key_state('p')) {  // changer pov
             clear_key_state('p');
             m_pov = !m_pov;
         }
+    }
+
+    Point centroid(const TriangleData &t) {
+        return Point((Vector(t.a) + Vector(t.b) + Vector(t.c)) / 3.f);
+    }
+
+    int render() {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        handleKeyState();
 
         glUseProgram(m_program);
 
         Transform model = Identity();
-        Transform view, projection;
+        Transform frustumView, frustumProjection, freeView, freeProjection, view, projection;
+        frustumView = m_frustumCamera.view();
+        frustumProjection = m_frustumCamera.projection();
+        freeView = m_camera.view();
+        freeProjection = m_camera.projection(window_width(), window_height(), 45);
         if (m_pov) {
-            view = m_frustum.view();
-            projection = m_frustum.projection();
+            view = frustumView;
+            projection = frustumProjection;
         } else {
-            view = m_camera.view();
-            projection = m_camera.projection(window_width(), window_height(), 45);
+            view = freeView;
+            projection = freeProjection;
         }
 
         Transform mv = view * model;
         Transform mvp = projection * mv;
+        Transform frustumMVP = frustumProjection * frustumView * model;
 
         program_uniform(m_program, "mvMatrix", mv);
         program_uniform(m_program, "mvpMatrix", mvp);
@@ -265,24 +344,49 @@ class TP : public App {
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-        m_objet.draw(m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+        // Transform proj2World = m_frustum.view().inverse() * m_frustum.projection().inverse();
+        std::vector<unsigned int> triangleInFrustum(m_objet.triangle_count(), 1);
+        for (uint i = 0; i < m_objet.triangle_count(); ++i) {
+            const auto &triangle = m_objet.triangle(i);
+            auto triangleCenter = centroid(triangle);
+            if (m_bbox.isInside(triangleCenter)) {
+                triangleInFrustum.at(i) = 0;
+            }
+            // std::cout << "inFrustum[" << i << "]: " << triangleInFrustum[i] << std::endl;
+        }
+
+        m_groups = m_objet.groups(triangleInFrustum);
+        // m_objet.draw(m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+        // for (uint i = 0; i < m_groups.size(); i++) {
+        //     // const Material &material = m_objet.materials().material(m_groups[i].index);
+        //     m_objet.draw(m_groups[i].first, m_groups[i].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+        // }
+        // auto projPmin = frustumMVP(m_bbox.pmin);
+        // auto projPmax = frustumMVP(m_bbox.pmax);
+        // if (projPmin.x >= -1 && projPmax.x <= 1)
+        //     m_objet.draw(m_groups[0].first, m_groups[0].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+
+        if (m_frustumCamera.m_frustum.isInside(m_bbox)) {
+            m_objet.draw(m_groups[0].first, m_groups[0].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+        }
 
         // BBOX
         glUseProgram(m_bbox_program);
         program_uniform(m_bbox_program, "mvpMatrix", mvp);
         m_bbox.m.draw(m_bbox_program, true, false, false, true, false);
-        m_frustum.m.draw(m_bbox_program, true, false, false, true, false);
+        m_frustumCamera.getMesh().draw(m_bbox_program, true, false, false, true, false);
 
         return 1;
     }
 
    protected:
-    Transform m_model;
     Mesh m_objet;
+    std::vector<TriangleGroup> m_groups;
     BBox m_bbox;
-    int m_pov = 0;
     Orbiter m_camera;
-    FrustumOrbiter m_frustum;
+    FrustumOrbiter m_frustumCamera;
+    // Quelle POV camera
+    int m_pov = 0;
     GLuint m_texture;
     GLuint m_program;
     GLuint m_bbox_program;
