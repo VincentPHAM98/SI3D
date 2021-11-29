@@ -12,6 +12,26 @@
 struct BBox {
     Mesh m;
     Point pmin, pmax;
+
+    BBox() : pmin(), pmax() {}
+
+    BBox(const Point &p) : pmin(p), pmax(p) {
+        init();
+    }
+    BBox(const Point &_pmin, const Point &_pmax) : pmin(_pmin), pmax(_pmax) {
+        init();
+    }
+    BBox(const BBox &box) : pmin(box.pmin), pmax(box.pmax) {
+        *this = BBox(pmin, pmax);
+    }
+    BBox &operator=(const BBox &b) {
+        m.clear();
+        m = b.m;
+        pmin = b.pmin;
+        pmax = b.pmax;
+        return *this;
+    }
+
     void init() {
         Point f11 = pmin;
         Point f12 = Point(pmax.x, pmin.y, pmin.z);
@@ -58,25 +78,6 @@ struct BBox {
         m.vertex(f11);
     }
 
-    BBox() : pmin(), pmax() {}
-
-    BBox(const Point &p) : pmin(p), pmax(p) {
-        init();
-    }
-    BBox(const Point &_pmin, const Point &_pmax) : pmin(_pmin), pmax(_pmax) {
-        init();
-    }
-    BBox(const BBox &box) : pmin(box.pmin), pmax(box.pmax) {
-        *this = BBox(pmin, pmax);
-    }
-    BBox &operator=(const BBox &b) {
-        m.release();
-        m = b.m;
-        pmin = b.pmin;
-        pmax = b.pmax;
-        return *this;
-    }
-
     BBox &insert(const Point &p) {
         pmin = min(pmin, p);
         pmax = max(pmax, p);
@@ -90,17 +91,36 @@ struct BBox {
 
     bool isInside(const Point &p) {
         return (
-            p.x >= pmin.x && p.x <= pmax.x ||
-            p.y >= pmin.y && p.y <= pmax.y ||
-            p.z >= pmin.z && p.z <= pmax.z);
+            (p.x >= pmin.x && p.x <= pmax.x) ||
+            (p.y >= pmin.y && p.y <= pmax.y) ||
+            (p.z >= pmin.z && p.z <= pmax.z));
     }
 
     float centroid(const int axis) const { return (pmin(axis) + pmax(axis)) / 2; }
 };
 
-struct Frustum {
-    Mesh m_mesh;
+class Frustum {
     Transform m_view, m_projection;
+
+    // p point projectif
+    bool isInside(const vec4 &p) const {
+        // auto vp = m_projection * m_view;
+        // p = vp(p);
+        // auto coords = std::array<float, 3>{p.x, p.y, p.z};
+        // for (auto coord : coords) {
+        //     if (coord <= -1 || coord >= 1)
+        //         return false;
+        // }
+
+        for (uint i = 0; i < 3u; i++) {
+            if (p(i) <= -p.w || p(i) >= p.w)
+                return false;
+        }
+        return true;
+    }
+
+   public:
+    Mesh m_mesh;
 
     Frustum() {}
 
@@ -154,36 +174,35 @@ struct Frustum {
         m_projection = projection;
         trace();
     }
-    // p: coordoonnées du monde
-    bool isInside(Point p) {
+
+    bool isInside(const BBox &bbox) const {
         auto vp = m_projection * m_view;
-        p = vp(p);
-        auto coords = std::array<float, 3>{p.x, p.y, p.z};
-        for (auto coord : coords) {
-            if (coord <= -1 || coord >= 1)
-                return false;
+        auto pmin = vec4(bbox.pmin);
+        auto pmax = vec4(bbox.pmax);
+        auto cornerPoints = std::vector<vec4>{
+            pmin,
+            vec4(pmax.x, pmin.y, pmin.z, 1.f),
+            vec4(pmax.x, pmax.y, pmin.z, 1.f),
+            vec4(pmin.x, pmax.y, pmin.z, 1.f),
+            vec4(pmin.x, pmax.y, pmax.z, 1.f),
+            vec4(pmin.x, pmin.y, pmax.z, 1.f),
+            vec4(pmax.x, pmin.y, pmax.z, 1.f),
+            pmax};
+
+        // application de la projection
+        for (auto &&point : cornerPoints) {
+            point = vp(point);
         }
-        return true;
-    }
-
-    bool isInside(const BBox &bbox) {
-        auto vp = m_projection * m_view;
-        // auto vp = m_view * m_projection;
-        auto projPmin = vp(bbox.pmin);
-        auto projPmax = vp(bbox.pmax);
-        std::cout << "projPmin: " << projPmin << std::endl;
-        std::cout << "projPmax: " << projPmax << std::endl;
-        if (projPmin.x > 1. && projPmax.x > 1. ||
-            projPmin.x < -1. && projPmax.x < -1. ||
-            projPmin.y > 1. && projPmax.y > 1. ||
-            projPmin.y < -1. && projPmax.y < -1. ||
-            projPmin.z > 1. && projPmax.z > 1. ||
-            projPmin.z < -1. && projPmax.z < -1.)
-            return false;
-
-        return true;
+        for (auto &&point : cornerPoints) {
+            // std::cout << point << std::endl;
+            if (isInside(point))
+                return true;
+        }
+        std::cout << "END" << std::endl;
+        return false;
     }
 };
+
 // Orbiter avec un mesh pour dessiner son frustum
 class FrustumOrbiter : public Orbiter {
    public:
@@ -238,6 +257,9 @@ class TP : public App {
         m_camera.move(-100.);
 
         m_bbox = BBox(pmin, pmax);
+
+        std::cout << "pmin: " << pmin << std::endl;
+        std::cout << "pmax: " << pmax << std::endl;
 
         m_program = read_program("src/shader/frustum_culling.glsl");
         m_bbox_program = read_program("src/shader/bbox.glsl");
@@ -356,16 +378,6 @@ class TP : public App {
         }
 
         m_groups = m_objet.groups(triangleInFrustum);
-        // m_objet.draw(m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
-        // for (uint i = 0; i < m_groups.size(); i++) {
-        //     // const Material &material = m_objet.materials().material(m_groups[i].index);
-        //     m_objet.draw(m_groups[i].first, m_groups[i].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
-        // }
-        // auto projPmin = frustumMVP(m_bbox.pmin);
-        // auto projPmax = frustumMVP(m_bbox.pmax);
-        // if (projPmin.x >= -1 && projPmax.x <= 1)
-        //     m_objet.draw(m_groups[0].first, m_groups[0].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
-
         if (m_frustumCamera.m_frustum.isInside(m_bbox)) {
             m_objet.draw(m_groups[0].first, m_groups[0].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
         }
