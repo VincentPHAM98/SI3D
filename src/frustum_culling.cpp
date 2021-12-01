@@ -1,5 +1,7 @@
 //! \file tuto9.cpp utilisation d'un shader 'utilisateur' pour afficher un objet Mesh
 
+#include <algorithm>
+
 #include "app.h"
 #include "draw.h"
 #include "mat.h"
@@ -12,36 +14,55 @@
 struct BBox {
     Mesh m;
     Point pmin, pmax;
+    std::array<Point, 8> cornerPoints;
+    uint idxStart = 0u;
+    uint triangleCount = 0u;
 
-    BBox() : pmin(), pmax() {}
+    BBox() : pmin(), pmax(), m(GL_LINES) {
+        init();
+    }
 
     BBox(const Point &p) : pmin(p), pmax(p) {
         init();
+        trace();
     }
     BBox(const Point &_pmin, const Point &_pmax) : pmin(_pmin), pmax(_pmax) {
         init();
+        trace();
     }
-    BBox(const BBox &box) : pmin(box.pmin), pmax(box.pmax) {
+    BBox(const BBox &box) : pmin(box.pmin), pmax(box.pmax), cornerPoints(box.cornerPoints) {
         *this = BBox(pmin, pmax);
+        trace();
     }
     BBox &operator=(const BBox &b) {
-        m.clear();
-        m = b.m;
         pmin = b.pmin;
         pmax = b.pmax;
+        cornerPoints = b.cornerPoints;
+        trace();
         return *this;
     }
 
     void init() {
-        Point f11 = pmin;
-        Point f12 = Point(pmax.x, pmin.y, pmin.z);
-        Point f13 = Point(pmax.x, pmax.y, pmin.z);
-        Point f14 = Point(pmin.x, pmax.y, pmin.z);
+        cornerPoints.at(0) = pmin;
+        cornerPoints.at(1) = Point(pmax.x, pmin.y, pmin.z);
+        cornerPoints.at(2) = Point(pmax.x, pmax.y, pmin.z);
+        cornerPoints.at(3) = Point(pmin.x, pmax.y, pmin.z);
+        cornerPoints.at(4) = Point(pmin.x, pmin.y, pmax.z);
+        cornerPoints.at(5) = Point(pmax.x, pmin.y, pmax.z);
+        cornerPoints.at(6) = pmax;
+        cornerPoints.at(7) = Point(pmin.x, pmax.y, pmax.z);
+    }
 
-        Point f21 = Point(pmin.x, pmin.y, pmax.z);
-        Point f22 = Point(pmax.x, pmin.y, pmax.z);
-        Point f23 = pmax;
-        Point f24 = Point(pmin.x, pmax.y, pmax.z);
+    void trace() {
+        Point &f11 = cornerPoints.at(0);
+        Point &f12 = cornerPoints.at(1);
+        Point &f13 = cornerPoints.at(2);
+        Point &f14 = cornerPoints.at(3);
+
+        Point &f21 = cornerPoints.at(4);
+        Point &f22 = cornerPoints.at(5);
+        Point &f23 = cornerPoints.at(6);
+        Point &f24 = cornerPoints.at(7);
 
         m.create(GL_LINES);
         m.color(Blue());
@@ -91,12 +112,25 @@ struct BBox {
 
     bool isInside(const Point &p) {
         return (
-            (p.x >= pmin.x && p.x <= pmax.x) ||
-            (p.y >= pmin.y && p.y <= pmax.y) ||
+            (p.x >= pmin.x && p.x <= pmax.x) &&
+            (p.y >= pmin.y && p.y <= pmax.y) &&
             (p.z >= pmin.z && p.z <= pmax.z));
     }
 
+    Point centroid() {
+        return Point((Vector(pmin) + Vector(pmax)) / 2.);
+    }
     float centroid(const int axis) const { return (pmin(axis) + pmax(axis)) / 2; }
+
+    std::array<BBox, 8> subdivision() {
+        auto center = centroid();
+        auto boxes = std::array<BBox, 8>();
+        for (size_t i = 0; i < 8; i++) {
+            boxes.at(i).pmin = min(center, cornerPoints.at(i));
+            boxes.at(i).pmax = max(center, cornerPoints.at(i));
+        }
+        return boxes;
+    }
 };
 
 class Frustum {
@@ -104,14 +138,6 @@ class Frustum {
 
     // p point projectif
     bool isInside(const vec4 &p) const {
-        // auto vp = m_projection * m_view;
-        // p = vp(p);
-        // auto coords = std::array<float, 3>{p.x, p.y, p.z};
-        // for (auto coord : coords) {
-        //     if (coord <= -1 || coord >= 1)
-        //         return false;
-        // }
-
         for (uint i = 0; i < 3u; i++) {
             if (p(i) <= -p.w || p(i) >= p.w)
                 return false;
@@ -189,16 +215,10 @@ class Frustum {
             vec4(pmax.x, pmin.y, pmax.z, 1.f),
             pmax};
 
-        // application de la projection
         for (auto &&point : cornerPoints) {
-            point = vp(point);
-        }
-        for (auto &&point : cornerPoints) {
-            // std::cout << point << std::endl;
-            if (isInside(point))
+            if (isInside(vp(point)))
                 return true;
         }
-        std::cout << "END" << std::endl;
         return false;
     }
 };
@@ -247,6 +267,7 @@ class TP : public App {
 
     int init() {
         m_objet = read_mesh("data/robot.obj");
+        // m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
         m_groups = m_objet.groups();
 
         Point pmin, pmax;
@@ -256,10 +277,14 @@ class TP : public App {
         m_frustumCamera.lookat(pmin, pmax);
         m_camera.move(-100.);
 
-        m_bbox = BBox(pmin, pmax);
-
-        std::cout << "pmin: " << pmin << std::endl;
-        std::cout << "pmax: " << pmax << std::endl;
+        m_boxes.push_back(BBox(pmin, pmax));
+        auto sub = m_boxes.at(0).subdivision();
+        m_boxes.clear();
+        for (auto &&box : sub) {
+            std::cout << "pmin: " << box.pmin << "\t pmax: " << box.pmax << std::endl
+                      << std::endl;
+            m_boxes.push_back(box);
+        }
 
         m_program = read_program("src/shader/frustum_culling.glsl");
         m_bbox_program = read_program("src/shader/bbox.glsl");
@@ -285,7 +310,8 @@ class TP : public App {
         release_program(m_program);
         release_program(m_bbox_program);
         m_objet.release();
-        m_bbox.m.release();
+        // relase boxes
+        std::for_each(m_boxes.begin(), m_boxes.end(), [](BBox &b) { b.m.release(); });
         m_frustumCamera.getMesh().release();
         return 0;
     }
@@ -366,26 +392,36 @@ class TP : public App {
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-        // Transform proj2World = m_frustum.view().inverse() * m_frustum.projection().inverse();
-        std::vector<unsigned int> triangleInFrustum(m_objet.triangle_count(), 1);
+        // trouver a quelle box chaque triangle appartient
+        std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
         for (uint i = 0; i < m_objet.triangle_count(); ++i) {
             const auto &triangle = m_objet.triangle(i);
             auto triangleCenter = centroid(triangle);
-            if (m_bbox.isInside(triangleCenter)) {
-                triangleInFrustum.at(i) = 0;
-            }
-            // std::cout << "inFrustum[" << i << "]: " << triangleInFrustum[i] << std::endl;
-        }
 
-        m_groups = m_objet.groups(triangleInFrustum);
-        if (m_frustumCamera.m_frustum.isInside(m_bbox)) {
-            m_objet.draw(m_groups[0].first, m_groups[0].n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+            for (size_t j = 0; j < m_boxes.size(); j++) {
+                if (m_boxes.at(j).isInside(triangleCenter)) {
+                    triangleBoxIdx.at(i) = j;
+                }
+            }
+            // std::cout << "triangleBoxIdx[" << i << "]: " << triangleBoxIdx[i] << std::endl;
+        }
+        // grouper les triangles par leur appartenance a une boite
+        m_groups = m_objet.groups(triangleBoxIdx);
+
+        for (auto &group : m_groups) {
+            // test si la bbox du groupe de triangle est dans le frustum
+            if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
+                m_objet.draw(group.first, group.n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
+            }
+            // break;
         }
 
         // BBOX
         glUseProgram(m_bbox_program);
         program_uniform(m_bbox_program, "mvpMatrix", mvp);
-        m_bbox.m.draw(m_bbox_program, true, false, false, true, false);
+        for (auto &&box : m_boxes) {
+            box.m.draw(m_bbox_program, true, false, false, true, false);
+        }
         m_frustumCamera.getMesh().draw(m_bbox_program, true, false, false, true, false);
 
         return 1;
@@ -394,7 +430,8 @@ class TP : public App {
    protected:
     Mesh m_objet;
     std::vector<TriangleGroup> m_groups;
-    BBox m_bbox;
+    // BBox m_bbox;
+    std::vector<BBox> m_boxes;
     Orbiter m_camera;
     FrustumOrbiter m_frustumCamera;
     // Quelle POV camera
