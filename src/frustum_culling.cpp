@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "app.h"
+#include "app_time.h"
 #include "draw.h"
 #include "mat.h"
 #include "mesh.h"
@@ -17,6 +18,8 @@ struct BBox {
     std::array<Point, 8> cornerPoints;
     uint idxStart = 0u;
     uint triangleCount = 0u;
+    // mis a jour a chaque frame. Dessine le mesh si les triangles sont ds le frustum
+    bool drawNextTime = false;
 
     BBox() : pmin(), pmax(), m(GL_LINES) {
         init();
@@ -122,12 +125,25 @@ struct BBox {
     }
     float centroid(const int axis) const { return (pmin(axis) + pmax(axis)) / 2; }
 
-    std::array<BBox, 8> subdivision() {
+    std::vector<BBox> subdivision() {
         auto center = centroid();
-        auto boxes = std::array<BBox, 8>();
+        auto boxes = std::vector<BBox>(8);
         for (size_t i = 0; i < 8; i++) {
             boxes.at(i).pmin = min(center, cornerPoints.at(i));
             boxes.at(i).pmax = max(center, cornerPoints.at(i));
+        }
+        return boxes;
+    }
+
+    std::vector<BBox> subdivide(double boxSize) {
+        auto boxes = std::vector<BBox>();
+        for (double z = pmin.z; z <= pmax.z; z += boxSize) {
+            for (double y = pmin.y; y <= pmax.y; y += boxSize) {
+                for (double x = pmin.x; x <= pmax.x; x += boxSize) {
+                    boxes.push_back(BBox(Point(x, y, z),
+                                         Point(x + boxSize, y + boxSize, z + boxSize)));
+                }
+            }
         }
         return boxes;
     }
@@ -260,14 +276,14 @@ class FrustumOrbiter : public Orbiter {
     Mesh &getMesh() { return m_frustum.m_mesh; }
 };
 
-class TP : public App {
+class TP : public AppTime {
    public:
     // constructeur : donner les dimensions de l'image, et eventuellement la version d'openGL.
-    TP() : App(1024, 640) {}
+    TP() : AppTime(1024, 640) {}
 
     int init() {
-        m_objet = read_mesh("data/robot.obj");
-        // m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
+        // m_objet = read_mesh("data/robot.obj");
+        m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
         m_groups = m_objet.groups();
 
         Point pmin, pmax;
@@ -277,20 +293,28 @@ class TP : public App {
         m_frustumCamera.lookat(pmin, pmax);
         m_camera.move(-100.);
 
-        m_boxes.push_back(BBox(pmin, pmax));
-        auto sub = m_boxes.at(0).subdivision();
-        m_boxes.clear();
-        for (auto &&box : sub) {
-            std::cout << "pmin: " << box.pmin << "\t pmax: " << box.pmax << std::endl
-                      << std::endl;
-            m_boxes.push_back(box);
+        m_boxes = BBox(pmin, pmax).subdivide((pmax.x - pmin.x) / 10);
+
+        // trouver a quelle box chaque triangle appartient
+        std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
+        for (uint i = 0; i < m_objet.triangle_count(); ++i) {
+            const auto &triangle = m_objet.triangle(i);
+            auto triangleCenter = centroid(triangle);
+            for (size_t j = 0; j < m_boxes.size(); j++) {
+                if (m_boxes[j].isInside(triangleCenter)) {
+                    m_boxes.at(j).triangleCount++;
+                    triangleBoxIdx[i] = j;
+                }
+            }
         }
+        // grouper les triangles par leur appartenance a une boite
+        m_groups = m_objet.groups(triangleBoxIdx);
 
         m_program = read_program("src/shader/frustum_culling.glsl");
         m_bbox_program = read_program("src/shader/bbox.glsl");
         program_print_errors(m_program);
 
-        m_colors.resize(16);
+        m_colors.resize(256);
         const Materials &materials = m_objet.materials();
         assert(materials.count() <= int(m_colors.size()));
         for (int i = 0; i < materials.count(); i++)
@@ -331,6 +355,12 @@ class TP : public App {
         else if (mb & SDL_BUTTON(2))  // le bouton du milieu est enfonce
             m_camera.translation((float)mx / (float)window_width(), (float)my / (float)window_height());
 
+        // recupere l'etat de la molette / touch
+        SDL_MouseWheelEvent wheel = wheel_event();
+        if (wheel.y != 0) {
+            clear_wheel_event();
+            m_camera.move(8.f * wheel.y);  // approche / eloigne l'objet
+        }
         // camera frustum deplacement
         if (key_state('i'))
             m_frustumCamera.translation(0.f, 10.f / (float)window_width());
@@ -392,35 +422,23 @@ class TP : public App {
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-        // trouver a quelle box chaque triangle appartient
-        std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
-        for (uint i = 0; i < m_objet.triangle_count(); ++i) {
-            const auto &triangle = m_objet.triangle(i);
-            auto triangleCenter = centroid(triangle);
-
-            for (size_t j = 0; j < m_boxes.size(); j++) {
-                if (m_boxes.at(j).isInside(triangleCenter)) {
-                    triangleBoxIdx.at(i) = j;
-                }
-            }
-            // std::cout << "triangleBoxIdx[" << i << "]: " << triangleBoxIdx[i] << std::endl;
-        }
-        // grouper les triangles par leur appartenance a une boite
-        m_groups = m_objet.groups(triangleBoxIdx);
 
         for (auto &group : m_groups) {
             // test si la bbox du groupe de triangle est dans le frustum
             if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
+                m_boxes[group.index].drawNextTime = true;
                 m_objet.draw(group.first, group.n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
             }
-            // break;
         }
 
         // BBOX
         glUseProgram(m_bbox_program);
         program_uniform(m_bbox_program, "mvpMatrix", mvp);
         for (auto &&box : m_boxes) {
-            box.m.draw(m_bbox_program, true, false, false, true, false);
+            if (box.drawNextTime) {
+                box.drawNextTime = false;
+                box.m.draw(m_bbox_program, true, false, false, true, false);
+            }
         }
         m_frustumCamera.getMesh().draw(m_bbox_program, true, false, false, true, false);
 

@@ -10,7 +10,7 @@
 #include "draw.h"
 #include "texture.h"
 
-#include "app.h" // classe Application a deriver
+#include "app_time.h" // classe Application a deriver
 
 struct Buffers
 {
@@ -192,11 +192,11 @@ GLuint make_texture_array(const int unit, const std::vector<ImageData> &images, 
     return texture;
 }
 
-class TP : public App
+class TP : public AppTime
 {
 public:
     // constructeur : donner les dimensions de l'image, et eventuellement la version d'openGL.
-    TP() : App(1024, 640) {}
+    TP() : AppTime(1024, 640) {}
 
     int init()
     {
