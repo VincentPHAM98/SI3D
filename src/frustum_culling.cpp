@@ -113,7 +113,7 @@ struct BBox {
         return *this;
     }
 
-    bool isInside(const Point &p) {
+    bool isInside(const Point &p) const{
         return (
             (p.x >= pmin.x && p.x <= pmax.x) &&
             (p.y >= pmin.y && p.y <= pmax.y) &&
@@ -150,7 +150,8 @@ struct BBox {
 };
 
 class Frustum {
-    Transform m_view, m_projection;
+    Transform m_view, m_projection, m_proj2World;
+    std::vector<Point> m_worldPoints;
 
     // p point projectif
     bool isInside(const vec4 &p) const {
@@ -174,16 +175,17 @@ class Frustum {
     void trace() {
         m_mesh.clear();
         m_mesh.color(Green());
-        Transform proj2World = m_view.inverse() * m_projection.inverse();
+        m_proj2World = m_view.inverse() * m_projection.inverse();
         Point a, b, c, d, A, B, C, D;
-        a = proj2World(Point(-1, 1, -1));
-        b = proj2World(Point(1, 1, -1));
-        c = proj2World(Point(1, -1, -1));
-        d = proj2World(Point(-1, -1, -1));
-        A = proj2World(Point(-1, 1, 1));
-        B = proj2World(Point(1, 1, 1));
-        C = proj2World(Point(1, -1, 1));
-        D = proj2World(Point(-1, -1, 1));
+        m_worldPoints = {
+            a = m_proj2World(Point(-1, 1, -1)),
+            b = m_proj2World(Point(1, 1, -1)),
+            c = m_proj2World(Point(1, -1, -1)),
+            d = m_proj2World(Point(-1, -1, -1)),
+            A = m_proj2World(Point(-1, 1, 1)),
+            B = m_proj2World(Point(1, 1, 1)),
+            C = m_proj2World(Point(1, -1, 1)),
+            D = m_proj2World(Point(-1, -1, 1))};
         // quadrilatère proche
         m_mesh.restart_strip();
         m_mesh.vertex(a);
@@ -218,10 +220,10 @@ class Frustum {
     }
 
     bool isInside(const BBox &bbox) const {
-        auto vp = m_projection * m_view;
+        auto world2Projection = m_projection * m_view;
         auto pmin = vec4(bbox.pmin);
         auto pmax = vec4(bbox.pmax);
-        auto cornerPoints = std::vector<vec4>{
+        auto boxCornerPoints = std::vector<vec4>{
             pmin,
             vec4(pmax.x, pmin.y, pmin.z, 1.f),
             vec4(pmax.x, pmax.y, pmin.z, 1.f),
@@ -231,10 +233,19 @@ class Frustum {
             vec4(pmax.x, pmin.y, pmax.z, 1.f),
             pmax};
 
-        for (auto &&point : cornerPoints) {
-            if (isInside(vp(point)))
+        // verifier si box dans frustum
+        for (auto &&point : boxCornerPoints) {
+            // on applique la transformation projective avant de tester
+            if (isInside(world2Projection(point)))
                 return true;
         }
+
+        //verifier si frustum dans box
+        for (auto &&point : m_worldPoints) {
+            if (bbox.isInside(point))
+                return true;
+        }
+        // si aucun corner du frustum ou de la boite est dans l'autre objet, faux
         return false;
     }
 };
@@ -421,7 +432,6 @@ class TP : public AppTime {
 
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
-
 
         for (auto &group : m_groups) {
             // test si la bbox du groupe de triangle est dans le frustum
