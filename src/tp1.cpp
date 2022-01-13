@@ -1,5 +1,6 @@
 //! \file tuto9.cpp utilisation d'un shader 'utilisateur' pour afficher un objet Mesh
 
+#include "app_camera.h"
 #include "app_time.h"  // classe Application a deriver
 #include "draw.h"
 #include "mat.h"
@@ -190,6 +191,7 @@ class TP : public AppTime {
         // Mesh mesh= read_mesh("data/robot.obj");
         // Mesh mesh= read_mesh("data/assets/roads_quaternion/OBJ/Street_3Way_2.obj");
         // Mesh mesh= read_mesh("data/assets/roads_quaternion/OBJ/Street_Bridgeroads_quaternion/OBJ/Street_Bridge_Ramp.obj");
+        m_test_mesh = read_mesh("data/robot.obj");
         Mesh mesh = read_mesh("data/assets/bistro-small/exterior.obj");
         if (mesh.materials().count() == 0)
             return -1;  // pas de matieres, pas d'affichage
@@ -203,16 +205,20 @@ class TP : public AppTime {
         m_program = read_program("src/shader/tp1_color.glsl");
         program_print_errors(m_program);
 
-        m_colors.resize(256);
-        m_textures.resize(256);
+        // m_colors.resize(256);
+        m_textures_diffuse.resize(256);
+        m_textures_specular.resize(256);
+        m_textures_emissive.resize(256);
 
         // copier les matieres utilisees
         const Materials &materials = mesh.materials();
-        assert(materials.count() <= int(m_colors.size()));
+        assert(materials.count() <= static_cast<int>(m_textures_diffuse.size()));
 
         for (int i = 0; i < materials.count(); i++) {
-            m_colors[i] = materials.material(i).diffuse;
-            m_textures[i] = materials.material(i).diffuse_texture;
+            // m_colors[i] = materials.material(i).diffuse;
+            m_textures_diffuse[i] = materials.material(i).diffuse_texture;
+            m_textures_specular[i] = materials.material(i).specular_texture;
+            m_textures_emissive[i] = materials.material(i).emission_texture;
         }
 
         std::vector<ImageData> images;
@@ -232,6 +238,12 @@ class TP : public AppTime {
         //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         // }
+
+        // cree le tableaux des positions des lumières
+        m_light_positions.resize(256);
+        for (auto &pos : m_light_positions) {
+            pos = Point(rand() % 10, 20, rand() % 10);
+        }
 
         // etat openGL par defaut
         glClearColor(0.2f, 0.2f, 0.2f, 1.f);  // couleur par defaut de la fenetre
@@ -259,15 +271,53 @@ class TP : public AppTime {
         }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // deplace la camera
+        // // deplace la camera
+        // int mx, my;
+        // unsigned int mb = SDL_GetRelativeMouseState(&mx, &my);
+        // if (mb & SDL_BUTTON(1))  // le bouton gauche est enfonce
+        //     m_camera.rotation(mx, my);
+        // else if (mb & SDL_BUTTON(3))  // le bouton droit est enfonce
+        //     m_camera.move(mx);
+        // else if (mb & SDL_BUTTON(2))  // le bouton du milieu est enfonce
+        //     m_camera.translation((float)mx / (float)window_width(), (float)my / (float)window_height());
+
+        // recupere les mouvements de la souris
         int mx, my;
         unsigned int mb = SDL_GetRelativeMouseState(&mx, &my);
-        if (mb & SDL_BUTTON(1))  // le bouton gauche est enfonce
-            m_camera.rotation(mx, my);
-        else if (mb & SDL_BUTTON(3))  // le bouton droit est enfonce
-            m_camera.move(mx);
-        else if (mb & SDL_BUTTON(2))  // le bouton du milieu est enfonce
-            m_camera.translation((float)mx / (float)window_width(), (float)my / (float)window_height());
+        int mousex, mousey;
+        SDL_GetMouseState(&mousex, &mousey);
+
+        // deplace la camera
+        if (mb & SDL_BUTTON(1))
+            m_camera.rotation(mx, my);  // tourne autour de l'objet
+        else if (mb & SDL_BUTTON(3))
+            m_camera.translation((float)mx / (float)window_width(), (float)my / (float)window_height());  // deplace le point de rotation
+        else if (mb & SDL_BUTTON(2))
+            m_camera.move(mx);  // approche / eloigne l'objet
+
+        SDL_MouseWheelEvent wheel = wheel_event();
+        if (wheel.y != 0) {
+            clear_wheel_event();
+            m_camera.move(8.f * wheel.y);  // approche / eloigne l'objet
+        }
+
+        const char *orbiter_filename = "app_orbiter.txt";
+        // copy / export / write orbiter
+        if (key_state('c')) {
+            clear_key_state('c');
+            m_camera.write_orbiter(orbiter_filename);
+        }
+        // paste / read orbiter
+        if (key_state('v')) {
+            clear_key_state('v');
+
+            Orbiter tmp;
+            if (tmp.read_orbiter(orbiter_filename) < 0)
+                // ne pas modifer la camera en cas d'erreur de lecture...
+                tmp = m_camera;
+
+            m_camera = tmp;
+        }
 
         glUseProgram(m_program);
 
@@ -297,17 +347,32 @@ class TP : public AppTime {
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-        location = glGetUniformLocation(m_program, "textures");
-        glUniform1iv(location, m_textures.size(), &m_textures[0]);
+        location = glGetUniformLocation(m_program, "textures_diffuse");
+        glUniform1iv(location, m_textures_diffuse.size(), &m_textures_diffuse[0]);
+
+        location = glGetUniformLocation(m_program, "textures_specular");
+        glUniform1iv(location, m_textures_specular.size(), &m_textures_specular[0]);
+
+        location = glGetUniformLocation(m_program, "textures_emissive");
+        glUniform1iv(location, m_textures_emissive.size(), &m_textures_emissive[0]);
+
+        for (auto &pos : m_light_positions) {
+            pos = view(pos);
+        }
+        location = glGetUniformLocation(m_program, "lights_position");
+        glUniform3fv(location, m_light_positions.size(), &m_light_positions[0].x);
 
         glBindVertexArray(m_objet.vao);
         // dessiner les triangles du groupe
         glDrawArrays(GL_TRIANGLES, 0, m_objet.vertex_count);
 
+        draw(m_test_mesh, m_camera);
+
         return 1;
     }
 
    protected:
+    Mesh m_test_mesh;
     Transform m_model;
     Buffers m_objet;
     Orbiter m_camera;
@@ -315,7 +380,10 @@ class TP : public AppTime {
     GLuint m_texture_array;
     GLuint m_program;
     std::vector<Color> m_colors;
-    std::vector<int> m_textures;
+    std::vector<int> m_textures_diffuse;
+    std::vector<int> m_textures_specular;
+    std::vector<int> m_textures_emissive;
+    std::vector<Point> m_light_positions;
 };
 
 int main(int argc, char **argv) {
