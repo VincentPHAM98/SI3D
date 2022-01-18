@@ -34,7 +34,7 @@ in vec3 vertex_position;
 in vec3 vertex_normal;
 flat in uint vertex_material;	// !! decoration flat, le varying est marque explicitement comme non interpolable  !!
 
-#define MAX_MATERIALS 16
+#define MAX_MATERIALS 256
 uniform vec4 materials[MAX_MATERIALS];
 
 void main( )

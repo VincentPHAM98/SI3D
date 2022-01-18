@@ -366,7 +366,7 @@ class TP : public AppTime {
         // dessiner les triangles du groupe
         glDrawArrays(GL_TRIANGLES, 0, m_objet.vertex_count);
 
-        draw(m_test_mesh, m_camera);
+        // draw(m_test_mesh, m_camera);
 
         return 1;
     }

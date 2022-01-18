@@ -17,7 +17,8 @@ struct BBox {
     Point pmin, pmax;
     std::array<Point, 8> cornerPoints;
     uint idxStart = 0u;
-    uint triangleCount = 0u;
+    uint triangleCount = 0u;  
+    std::vector<TriangleData> trianglesInside;
     // mis a jour a chaque frame. Dessine le mesh si les triangles sont ds le frustum
     bool drawNextTime = false;
 
@@ -68,9 +69,8 @@ struct BBox {
         Point &f24 = cornerPoints.at(7);
 
         m.create(GL_LINES);
-        m.color(Blue());
-        m.vertex(f11);
         m.color(Red());
+        m.vertex(f11);
         m.vertex(f12);
         m.vertex(f12);
         m.vertex(f13);
@@ -81,30 +81,26 @@ struct BBox {
         m.vertex(f21);
         m.vertex(f22);
         m.vertex(f22);
-        m.color(Green());
         m.vertex(f23);
         m.vertex(f23);
-        m.color(Red());
         m.vertex(f24);
         m.vertex(f24);
         m.vertex(f21);
 
         m.vertex(f24);
         m.vertex(f14);
-        m.color(Green());
         m.vertex(f23);
-        m.color(Red());
         m.vertex(f13);
         m.vertex(f22);
         m.vertex(f12);
         m.vertex(f21);
-        m.color(Blue());
         m.vertex(f11);
     }
 
     BBox &insert(const Point &p) {
         pmin = min(pmin, p);
         pmax = max(pmax, p);
+        init();
         return *this;
     }
     BBox &insert(const BBox &box) {
@@ -113,7 +109,7 @@ struct BBox {
         return *this;
     }
 
-    bool isInside(const Point &p) const{
+    bool isInside(const Point &p) const {
         return (
             (p.x >= pmin.x && p.x <= pmax.x) &&
             (p.y >= pmin.y && p.y <= pmax.y) &&
@@ -123,7 +119,9 @@ struct BBox {
     Point centroid() {
         return Point((Vector(pmin) + Vector(pmax)) / 2.);
     }
-    float centroid(const int axis) const { return (pmin(axis) + pmax(axis)) / 2; }
+    float centroid(const int axis) const {
+        return (pmin(axis) + pmax(axis)) / 2;
+    }
 
     std::vector<BBox> subdivision() {
         auto center = centroid();
@@ -153,7 +151,7 @@ class Frustum {
     Transform m_view, m_projection, m_proj2World;
     std::vector<Point> m_worldPoints;
 
-    // p point projectif
+    // p point repère projectif
     bool isInside(const vec4 &p) const {
         for (uint i = 0; i < 3u; i++) {
             if (p(i) <= -p.w || p(i) >= p.w)
@@ -287,6 +285,7 @@ class FrustumOrbiter : public Orbiter {
     Mesh &getMesh() { return m_frustum.m_mesh; }
 };
 
+
 class TP : public AppTime {
    public:
     // constructeur : donner les dimensions de l'image, et eventuellement la version d'openGL.
@@ -308,16 +307,37 @@ class TP : public AppTime {
 
         // trouver a quelle box chaque triangle appartient
         std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
-        for (uint i = 0; i < m_objet.triangle_count(); ++i) {
+        for (auto i = 0; i < m_objet.triangle_count(); ++i) {
             const auto &triangle = m_objet.triangle(i);
             auto triangleCenter = centroid(triangle);
             for (size_t j = 0; j < m_boxes.size(); j++) {
                 if (m_boxes[j].isInside(triangleCenter)) {
-                    m_boxes.at(j).triangleCount++;
+                    m_boxes.at(j).trianglesInside.push_back(triangle);
                     triangleBoxIdx[i] = j;
                 }
             }
         }
+
+        // auto realBoxes = std::vector<BBox>();
+        // // pour chaque grosse box on crée un petite box qui épouse au mieux
+        // // la forme des triangles qui sont dedans.
+        // for (auto i = 0u; i < m_boxes.size(); ++i) {
+        //     auto box = BBox();
+        //     // iterer sur les triangles contenus dans la box pour s'adapter au mieux
+        //     for (const auto &triangle: m_boxes[i].trianglesInside) {
+        //         box.insert(Point(triangle.a));
+        //         box.insert(Point(triangle.b));
+        //         box.insert(Point(triangle.c));
+        //         // box.insert(centroid(triangle));
+        //     }
+        //     box.trianglesInside = m_boxes[i].trianglesInside;
+        //     box.trace();
+        //     realBoxes.push_back(box);
+        // }
+        // m_boxes.clear();
+        // m_boxes = realBoxes;
+
+
         // grouper les triangles par leur appartenance a une boite
         m_groups = m_objet.groups(triangleBoxIdx);
 
