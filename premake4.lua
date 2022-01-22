@@ -113,6 +113,7 @@ projects = {
     "shader_kit",
     "image_viewer",
     "frustum_culling",
+    "gpu_culling",
     "tp1",
     "tp2"
 }
