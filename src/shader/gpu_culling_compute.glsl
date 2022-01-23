@@ -2,17 +2,72 @@
 
 #ifdef COMPUTE_SHADER
 
-struct Region {
-    uint test;
+struct Box {
+    vec3 pmin;
+    vec3 pmax;
+};
+
+bool isPointInsideBox(vec3 p, vec3 pmin, vec3 pmax) {
+    return (
+        (p.x >= pmin.x && p.x <= pmax.x) &&
+        (p.y >= pmin.y && p.y <= pmax.y) &&
+        (p.z >= pmin.z && p.z <= pmax.z));
 }
 
-struct Object
-{
-    vec3 pmin;
-    uint vertex_count;
-    vec3 pmax;
-    uint vertex_base;
+struct Frustum {
+    mat4 view, projection;
 };
+
+// p point repère projectif
+bool isVertexVisible(vec4 p) {
+    float arr[3] = { p.x, p.y, p.z };
+    for (uint i = 0; i < 3u; i++) {
+        if (arr[i] <= -p.w || arr[i] >= p.w)
+            return false;
+    }
+    return true;
+}
+
+// is box inside frustum
+bool isBoxVisible(mat4 world2projection, mat4 projection2world, 
+vec3 pmin, vec3 pmax) {
+    vec4 cornerPoints[8] = {
+        vec4(pmin, 1.f),
+        vec4(pmax.x, pmin.y, pmin.z, 1.f),
+        vec4(pmax.x, pmax.y, pmin.z, 1.f),
+        vec4(pmin.x, pmax.y, pmin.z, 1.f),
+        vec4(pmin.x, pmax.y, pmax.z, 1.f),
+        vec4(pmin.x, pmin.y, pmax.z, 1.f),
+        vec4(pmax.x, pmin.y, pmax.z, 1.f),
+        vec4(pmax, 1.f)
+    };
+
+    // verifier si box dans frustum
+    for (int i = 0; i < 8; ++i) {
+        // on applique la transformation projective avant de tester
+        // les points de la box sont dans le repère monde
+        vec4 pBoxProj = world2projection * cornerPoints[i];
+        if (isVertexVisible(pBoxProj))
+            return true;
+    }
+
+    // verifier si corner du frustum sont dans box
+    vec4 frustumWorldPoints[8] = {
+        projection2world * vec4(-1, 1, -1, 1),
+        projection2world * vec4(1, 1, -1, 1),
+        projection2world * vec4(1, -1, -1, 1),
+        projection2world * vec4(-1, -1, -1, 1),
+        projection2world * vec4(-1, 1, 1, 1),
+        projection2world * vec4(1, 1, 1, 1),
+        projection2world * vec4(1, -1, 1, 1),
+        projection2world * vec4(-1, -1, 1, 1)
+    };
+    for (int i = 0; i < 8; i++) {
+        if (isPointInsideBox(frustumWorldPoints[i].xyz, pmin, pmax))
+            return true;
+    }
+    return false;
+}
 
 struct Draw
 {
@@ -22,68 +77,21 @@ struct Draw
     uint instance_base;
 };
     
-layout(binding= 0, std430) readonly buffer objectData
-{
-    Object objects[];
-};
-
-layout(binding= 1, std430) writeonly buffer remapData
-{
-    uint remap[];
-};
-
-layout(binding= 2, std430) writeonly buffer paramData
+layout(binding= 0, std430) writeonly buffer paramData
 {
     Draw params[];
 };
-
-layout(binding= 3) buffer counterData
-{
-    uint count;
-};
-
-// uniform Frustum
-
-uniform vec3 bmin;
-uniform vec3 bmax;
 
 
 layout(local_size_x= 256) in;
 void main( )
 {
     uint id= gl_GlobalInvocationID.x;
-    if(id >= objects.length())
+    if(id >= params.length())
         return;
-    
-    // recupere la bbox du ieme objet...
-    vec3 pmin= objects[id].pmin;
-    vec3 pmax= objects[id].pmax;
-    
-    // test d'inclusion avec la bbox...
-    if(any(lessThan(pmax, bmin))        // trop a gauche pour x, etc
-    || any(greaterThan(pmin, bmax)))    // trop a droite pour x, etc
-        // pas d'intersection...
-        return;
-    
-    // bvec3 lessThan( vec3 a, vec3 b ) : compare les vecteurs composante par composante et renvoie un vecteur de bool.
-    // bvec3 greaterThan( vec3 a, vec3 b ) : idem.
-    // bool any( bvec3 ) : renvoie vrai si une des composantes du vecteur est vraie.   
-    
-    // l'objet est dans la bbox, il faut le dessiner : emettre les parametres du draw
-    // etape 1 : position dans le buffer de sortie
-    uint index= atomicAdd(count, 1);
-    // remarque : peut mieux faire, utiliser une hierarchie de compteurs atomiques, 1 par sous groupe, 1 par groupe, 1 global
-    // cf le principe et la solution AMD https://gpuopen.com/fast-compaction-with-mbcnt/
-    // cf equivalent nvidia https://developer.nvidia.com/reading-between-threads-shader-intrinsics
-    
-    // etape 2 : initialiser les parametres
-    params[index].vertex_count= objects[id].vertex_count;
-    params[index].instance_count= 1;
-    params[index].vertex_base= objects[id].vertex_base;
-    params[index].instance_base= 0;
-    
-    // etape 3 : conserve aussi l'indice de l'objet...
-    remap[index]= id;
+
+    if (id > params.length() / 2) 
+        params[id].vertex_count= 0;
 }
 
 #endif

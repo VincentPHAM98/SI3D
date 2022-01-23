@@ -373,8 +373,8 @@ struct alignas(4) IndirectParam {
     unsigned int first_vertex;
     unsigned int first_instance;
 };
-
 // alignement GLSL correct...
+
 class TP : public AppTime {
    public:
     // constructeur : donner les dimensions de l'image, et eventuellement la version d'openGL.
@@ -387,8 +387,8 @@ class TP : public AppTime {
             return -1;
         }
 
-        // m_objet = read_mesh("data/robot.obj");
-        m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
+        m_objet = read_mesh("data/robot.obj");
+        // m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
 
         Point pmin, pmax;
         m_objet.bounds(pmin, pmax);
@@ -455,6 +455,8 @@ class TP : public AppTime {
         m_vao = m_objet.create_buffers(/* texcoord */ false, /* normal */ true, /* color */ true, /* material */ true);
 
         m_program = read_program("src/shader/frustum_culling.glsl");
+        // m_program = read_program("src/shader/gpu_culling.glsl");
+        m_program_compute = read_program("src/shader/gpu_culling_compute.glsl");
         m_bbox_program = read_program("src/shader/bbox.glsl");
         program_print_errors(m_program);
 
@@ -540,8 +542,6 @@ class TP : public AppTime {
 
         handleKeyState();
 
-        glUseProgram(m_program);
-
         Transform model = Identity();
         Transform frustumView, frustumProjection, freeView, freeProjection, view, projection;
         frustumView = m_frustumCamera.view();
@@ -560,45 +560,40 @@ class TP : public AppTime {
         Transform mvp = projection * mv;
         Transform frustumMVP = frustumProjection * frustumView * model;
 
+        // multi draw indirect
+        // nombre de groupes de shaders
+        glUseProgram(m_program_compute);
+
+        // uniforms
+
+        // glBindBufferBase
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_indirect_buffer);
+
+        int n= m_groups.size() / 256;
+        if(m_groups.size() % 256)
+            n += 1;
+        glDispatchCompute(n, 1, 1);
+        // etape 2 : attendre le resultat
+        glMemoryBarrier(GL_COMMAND_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+
+        glBindVertexArray(m_vao);
+        glUseProgram(m_program);
+
         program_uniform(m_program, "mvMatrix", mv);
         program_uniform(m_program, "mvpMatrix", mvp);
-
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-#if 0
-        // draw multiples
-        for (auto &group : m_groups) {
-            // test si la bbox du groupe de triangle est dans le frustum
-            if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
-                m_boxes[group.index].drawNextTime = true;
-                m_objet.draw(group.first, group.n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
-            }
-        }
-#else
-        // multi draw indirect
-        glBindVertexArray(m_vao);
-
-        // struct RegionParams {
-        //     uint first;
-        //     uint n;
-        //     bool visible;
-        // };
-        // auto mdiParams = std::vector<RegionParams>();
-        // for (auto &group : m_groups) {
-        for (int i = 0; i < m_groups.size(); i++) {
-            auto &group = m_groups[i];
-            if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
-                m_multi_indirect[i].vertex_count = group.n;
-            }
-            else 
-                m_multi_indirect[i].vertex_count = 0;
-        }
+        // for (int i = 0; i < m_groups.size(); i++) {
+        //     auto &group = m_groups[i];
+        //     if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
+        //         m_multi_indirect[i].vertex_count = group.n;
+        //     } else
+        //         m_multi_indirect[i].vertex_count = 0;
+        // }
 
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, m_indirect_buffer);
-        glBufferData(GL_DRAW_INDIRECT_BUFFER, sizeof(IndirectParam) * m_multi_indirect.size(), &m_multi_indirect.front(), GL_DYNAMIC_DRAW);
         glMultiDrawArraysIndirect(m_objet.primitives(), 0, m_multi_indirect.size(), 0);
-#endif
 
         // BBOX
         glUseProgram(m_bbox_program);
@@ -626,6 +621,7 @@ class TP : public AppTime {
     GLuint m_texture;
     GLuint m_vao;
     GLuint m_program;
+    GLuint m_program_compute;
     GLuint m_bbox_program;
     std::vector<Color> m_colors;
     GLuint m_indirect_buffer;
