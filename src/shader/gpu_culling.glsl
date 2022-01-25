@@ -1,5 +1,3 @@
-//! \file frustum_culling.glsl
-
 #version 430
 
 #ifdef VERTEX_SHADER
@@ -10,15 +8,20 @@ layout(location= 0) in vec3 position;
 layout(location= 2) in vec3 normal;
 layout(location= 4) in uint material;
 
-uniform mat4 mvMatrix;
-uniform mat4 mvpMatrix;
-
 out vec3 vertex_position;
 out vec3 vertex_normal;
 flat out uint vertex_material;
 
-void main( )
-{
+uniform mat4 mvMatrix;
+uniform mat4 mvpMatrix;
+
+layout(binding = 0, std430) readonly 
+buffer remapData {
+    uint remap[];
+};
+
+void main() {
+    uint id= remap[gl_DrawIDARB];
     gl_Position= mvpMatrix * vec4(position, 1);
 
     vertex_position= vec3(mvMatrix * vec4(position, 1));

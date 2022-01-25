@@ -17,7 +17,7 @@ struct BBox {
     Point pmin, pmax;
     std::array<Point, 8> cornerPoints;
     uint idxStart = 0u;
-    uint triangleCount = 0u;  
+    uint triangleCount = 0u;
     std::vector<TriangleData> trianglesInside;
     // mis a jour a chaque frame. Dessine le mesh si les triangles sont ds le frustum
     bool drawNextTime = false;
@@ -285,15 +285,14 @@ class FrustumOrbiter : public Orbiter {
     Mesh &getMesh() { return m_frustum.m_mesh; }
 };
 
-
 class TP : public AppTime {
    public:
     // constructeur : donner les dimensions de l'image, et eventuellement la version d'openGL.
     TP() : AppTime(1024, 640) {}
 
     int init() {
-        // m_objet = read_mesh("data/robot.obj");
-        m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
+        m_objet = read_mesh("data/robot.obj");
+        // m_objet = read_mesh("data/assets/bistro-small/exterior.obj");
         m_groups = m_objet.groups();
 
         Point pmin, pmax;
@@ -303,7 +302,7 @@ class TP : public AppTime {
         m_frustumCamera.lookat(pmin, pmax);
         m_camera.move(-100.);
 
-        m_boxes = BBox(pmin, pmax).subdivide((pmax.x - pmin.x) / 10);
+        m_boxes = BBox(pmin, pmax).subdivide((pmax.x - pmin.x) / 50);
 
         // trouver a quelle box chaque triangle appartient
         std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
@@ -312,31 +311,33 @@ class TP : public AppTime {
             auto triangleCenter = centroid(triangle);
             for (size_t j = 0; j < m_boxes.size(); j++) {
                 if (m_boxes[j].isInside(triangleCenter)) {
+                    m_boxes[j].triangleCount++;
                     m_boxes.at(j).trianglesInside.push_back(triangle);
                     triangleBoxIdx[i] = j;
                 }
             }
         }
 
-        // auto realBoxes = std::vector<BBox>();
-        // // pour chaque grosse box on crée un petite box qui épouse au mieux
-        // // la forme des triangles qui sont dedans.
-        // for (auto i = 0u; i < m_boxes.size(); ++i) {
-        //     auto box = BBox();
-        //     // iterer sur les triangles contenus dans la box pour s'adapter au mieux
-        //     for (const auto &triangle: m_boxes[i].trianglesInside) {
-        //         box.insert(Point(triangle.a));
-        //         box.insert(Point(triangle.b));
-        //         box.insert(Point(triangle.c));
-        //         // box.insert(centroid(triangle));
-        //     }
-        //     box.trianglesInside = m_boxes[i].trianglesInside;
-        //     box.trace();
-        //     realBoxes.push_back(box);
-        // }
-        // m_boxes.clear();
-        // m_boxes = realBoxes;
-
+        auto realBoxes = std::vector<BBox>();
+        // pour chaque grosse box on crée un petite box qui épouse au mieux
+        // la forme des triangles qui sont dedans.
+        for (auto i = 0u; i < m_boxes.size(); ++i) {
+            if (m_boxes[i].triangleCount) {
+                auto box = BBox();
+                // iterer sur les triangles contenus dans la box pour s'adapter au mieux
+                for (const auto &triangle : m_boxes[i].trianglesInside) {
+                    box.insert(Point(triangle.a));
+                    box.insert(Point(triangle.b));
+                    box.insert(Point(triangle.c));
+                    // box.insert(centroid(triangle));
+                }
+                box.trianglesInside = m_boxes[i].trianglesInside;
+                box.trace();
+                realBoxes.push_back(box);
+            }
+        }
+        m_boxes.clear();
+        m_boxes = realBoxes;
 
         // grouper les triangles par leur appartenance a une boite
         m_groups = m_objet.groups(triangleBoxIdx);
@@ -453,9 +454,11 @@ class TP : public AppTime {
         int location = glGetUniformLocation(m_program, "materials");
         glUniform4fv(location, m_colors.size(), &m_colors[0].r);
 
-        for (auto &group : m_groups) {
+        // for (auto &group : m_groups) {
+        for (auto i = 0u; i < m_groups.size(); i++) {
+            auto &group = m_groups[i];
             // test si la bbox du groupe de triangle est dans le frustum
-            if (m_frustumCamera.m_frustum.isInside(m_boxes.at(group.index))) {
+            if (m_frustumCamera.m_frustum.isInside(m_boxes.at(i))) {
                 m_boxes[group.index].drawNextTime = true;
                 m_objet.draw(group.first, group.n, m_program, /* use position */ true, /* use texcoord */ false, /* use normal */ true, /* use color */ false, /* use material index*/ true);
             }

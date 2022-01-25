@@ -2,21 +2,12 @@
 
 #ifdef COMPUTE_SHADER
 
-struct Box {
-    vec3 pmin;
-    vec3 pmax;
-};
-
 bool isPointInsideBox(vec3 p, vec3 pmin, vec3 pmax) {
     return (
         (p.x >= pmin.x && p.x <= pmax.x) &&
         (p.y >= pmin.y && p.y <= pmax.y) &&
         (p.z >= pmin.z && p.z <= pmax.z));
 }
-
-struct Frustum {
-    mat4 view, projection;
-};
 
 // p point repère projectif
 bool isVertexVisible(vec4 p) {
@@ -69,29 +60,74 @@ vec3 pmin, vec3 pmax) {
     return false;
 }
 
-struct Draw
-{
+struct Object {
+    vec3 pmin;
+    uint vertex_count;
+    vec3 pmax;
+    uint vertex_base;
+};
+
+struct Draw {
     uint vertex_count;
     uint instance_count;
     uint vertex_base;
     uint instance_base;
 };
-    
-layout(binding= 0, std430) writeonly buffer paramData
-{
+
+
+layout (binding = 0, std430) readonly 
+buffer regionData {
+    Object objects[];
+};
+
+layout(binding= 1, std430) writeonly 
+buffer remapData {
+    uint remap[];
+};
+
+layout(binding = 2, std430) writeonly 
+buffer paramData {
     Draw params[];
 };
 
+layout(binding = 3) 
+buffer counterData {
+    uint count;
+};
+
+uniform mat4 world2projection;
+uniform mat4 projection2world;
 
 layout(local_size_x= 256) in;
 void main( )
 {
     uint id= gl_GlobalInvocationID.x;
-    if(id >= params.length())
+    if(id >= objects.length())
         return;
 
-    if (id > params.length() / 2) 
-        params[id].vertex_count= 0;
+    // recupere la bbox du ieme objet...
+    vec3 pmin= objects[id].pmin;
+    vec3 pmax= objects[id].pmax;
+
+    // // si la boite n'est pas visible return
+    if (!isBoxVisible(world2projection, projection2world, pmin, pmax)) {
+        return;
+    }
+
+    //     params[id].instance_count = 0;
+    // } else {
+    //     params[id].instance_count = 1;
+    // }
+
+    uint index= atomicAdd(count, 1);
+
+    // params[index].vertex_count= 100;
+    params[index].vertex_count= objects[id].vertex_count;
+    params[index].instance_count= 1;
+    params[index].vertex_base= objects[id].vertex_base;
+    params[index].instance_base= 0;
+
+    remap[index]= id;
 }
 
 #endif
