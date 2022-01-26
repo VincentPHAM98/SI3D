@@ -131,7 +131,7 @@ void main( )
     if (isBoxVisible(world2projection, projection2world, pmin, pmax))
         threadOffset = int(atomicAdd(groupCounter, 1));
 
-    barrier();
+    // barrier();
     if (localID == 0)
         groupOffset = atomicAdd(count, groupCounter);
     barrier();

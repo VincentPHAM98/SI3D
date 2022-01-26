@@ -16,8 +16,6 @@ struct Buffers {
     GLuint vao;
     GLuint buffer;
 
-    // GLuint normal_buffer;
-    // GLuint material_buffer;
     int vertex_count;
 
     Buffers() : vao(0), buffer(0), vertex_count(0) {}
@@ -93,13 +91,6 @@ struct Buffers {
     }
 };
 
-struct alignas(16) Object {
-    Point pmin;
-    unsigned int vertex_count;
-    Point pmax;
-    unsigned int vertex_base;
-};
-
 struct BBox {
     Mesh m;
     Point pmin, pmax;
@@ -110,7 +101,7 @@ struct BBox {
     // mis a jour a chaque frame. Dessine le mesh si les triangles sont ds le frustum
     bool drawNextTime = true;
 
-    BBox() : pmin(), pmax(), m(GL_LINES) {
+    BBox() : m(GL_LINES), pmin(), pmax() {
         init();
     }
 
@@ -123,9 +114,8 @@ struct BBox {
         trace();
     }
     BBox(const BBox &box) : m(box.m), pmin(box.pmin), pmax(box.pmax), cornerPoints(box.cornerPoints), idxStart(box.idxStart), triangleCount(box.triangleCount), trianglesInside(box.trianglesInside) {
-        // init();
-        // trace();
     }
+
     BBox &operator=(const BBox &b) {
         m = b.m;
         pmin = b.pmin;
@@ -377,6 +367,13 @@ class FrustumOrbiter : public Orbiter {
     Mesh &getMesh() { return m_frustum.m_mesh; }
 };
 
+struct alignas(16) Object {
+    Point pmin;
+    unsigned int vertex_count;
+    Point pmax;
+    unsigned int vertex_base;
+};
+
 // representation des parametres
 struct alignas(4) IndirectParam {
     unsigned int vertex_count;
@@ -424,6 +421,26 @@ class TP : public AppTime {
             }
         }
 
+        auto realBoxes = std::vector<BBox>();
+        // pour chaque grosse box on crée un petite box qui épouse au mieux
+        // la forme des triangles qui sont dedans.
+        for (auto i = 0u; i < m_boxes.size(); ++i) {
+            if (m_boxes[i].triangleCount) {
+                auto box = BBox(m_boxes[i]);
+                box.pmin = box.trianglesInside[0].a;
+                box.pmax = box.trianglesInside[0].a;
+                // iterer sur les triangles contenus dans la box pour s'adapter au mieux
+                for (const auto &triangle : m_boxes[i].trianglesInside) {
+                    box.insert(Point(triangle.a));
+                    box.insert(Point(triangle.b));
+                    box.insert(Point(triangle.c));
+                }
+                realBoxes.push_back(box);
+            }
+        }
+        // m_boxes.clear();
+        m_boxes = realBoxes;
+
         std::vector<BBox> temp;
         for (const auto &box : m_boxes) {
             if (box.triangleCount)
@@ -431,30 +448,10 @@ class TP : public AppTime {
         }
         // m_boxes = temp;
 
-        // auto realBoxes = std::vector<BBox>();
-        // // pour chaque grosse box on crée un petite box qui épouse au mieux
-        // // la forme des triangles qui sont dedans.
-        // for (auto i = 0u; i < m_boxes.size(); ++i) {
-        //     auto box = BBox();
-        //     // iterer sur les triangles contenus dans la box pour s'adapter au mieux
-        //     for (const auto &triangle: m_boxes[i].trianglesInside) {
-        //         box.insert(Point(triangle.a));
-        //         box.insert(Point(triangle.b));
-        //         box.insert(Point(triangle.c));
-        //         // box.insert(centroid(triangle));
-        //     }
-        //     box.trianglesInside = m_boxes[i].trianglesInside;
-        //     box.trace();
-        //     realBoxes.push_back(box);
-        // }
-        // m_boxes.clear();
-        // m_boxes = realBoxes;
-
         // grouper les triangles par leur appartenance a une boite
         m_groups = m_objet.groups(triangleBoxIdx);
 
         // mettre en place les parametres par region pour le mdi
-        // for (auto &group : m_groups) {
         for (auto i = 0u; i < m_groups.size(); i++) {
             auto &group = m_groups[i];
             auto &box = temp.at(i);
@@ -494,10 +491,8 @@ class TP : public AppTime {
         glBindBuffer(GL_PARAMETER_BUFFER_ARB, m_parameter_buffer);
         glBufferData(GL_PARAMETER_BUFFER_ARB, sizeof(int), nullptr, GL_DYNAMIC_DRAW);
 
-        // m_vao = m_objet.create_buffers(/* texcoord */ false, /* normal */ false, /* color */ false, /* material */ false);
         m_vao = m_objet.create_buffers(/* texcoord */ false, /* normal */ true, /* color */ true, /* material */ true);
 
-        // m_program = read_program("src/shader/frustum_culling.glsl");
         m_program = read_program("src/shader/gpu_culling.glsl");
         m_program_compute = read_program("src/shader/gpu_culling_compute.glsl");
         m_bbox_program = read_program("src/shader/bbox.glsl");
@@ -630,13 +625,6 @@ class TP : public AppTime {
         // etape 2 : attendre le resultat
         glMemoryBarrier(GL_COMMAND_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
 
-        // int counter = 0;
-        // glBindBuffer(GL_PARAMETER_BUFFER_ARB, m_parameter_buffer);
-        // glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_parameter_buffer);
-        // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(int), &counter);
-        // glGetBufferSubData(GL_PARAMETER_BUFFER_ARB, 3, sizeof(int), &counter);
-        // std::cout << "counter: " << counter << std::endl;
-
         // etape 3 : afficher les objets visibles (resultat de l'etape 1) avec 1 seul appel a glMultiDrawArraysIndirectCount
         glBindVertexArray(m_vao);
         glUseProgram(m_program);
@@ -655,14 +643,12 @@ class TP : public AppTime {
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, m_indirect_buffer);
 
         glMultiDrawArraysIndirectCountARB(m_objet.primitives(), 0, 0, m_box.size(), 0);
-        // glMultiDrawArraysIndirect(m_objet.primitives(), 0, m_multi_indirect.size(), 0);
 
         // BBOX
         glUseProgram(m_bbox_program);
         program_uniform(m_bbox_program, "mvpMatrix", mvp);
         for (auto &&box : m_boxes) {
             if (box.drawNextTime) {
-                // box.drawNextTime = false;
                 box.m.draw(m_bbox_program, true, false, false, true, false);
             }
         }

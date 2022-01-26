@@ -15,13 +15,7 @@ flat out uint vertex_material;
 uniform mat4 mvMatrix;
 uniform mat4 mvpMatrix;
 
-layout(binding = 0, std430) readonly 
-buffer remapData {
-    uint remap[];
-};
-
 void main() {
-    uint id= remap[gl_DrawIDARB];
     gl_Position= mvpMatrix * vec4(position, 1);
 
     vertex_position= vec3(mvMatrix * vec4(position, 1));
