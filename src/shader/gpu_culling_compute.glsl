@@ -98,36 +98,53 @@ buffer counterData {
 uniform mat4 world2projection;
 uniform mat4 projection2world;
 
+shared uint groupCounter;
+shared uint groupOffset; // endroit ou doit ecrire le groupe dans le buffer
+
 layout(local_size_x= 256) in;
 void main( )
 {
-    uint id= gl_GlobalInvocationID.x;
-    if(id >= objects.length())
+    // recupere l'indice du thread
+    const uint globalID= gl_GlobalInvocationID.x;
+    // Le tout premier thread global met a 0 le compteur global. 1 seule fois.
+    if (globalID == 0)
+        count = 0;
+    // uint id= gl_GlobalInvocationID.x;
+
+    if(globalID >= objects.length())
         return;
 
-    // recupere la bbox du ieme objet...
-    vec3 pmin= objects[id].pmin;
-    vec3 pmax= objects[id].pmax;
-
-    // // si la boite n'est pas visible return
-    if (!isBoxVisible(world2projection, projection2world, pmin, pmax)) {
-        return;
+    const uint localID = gl_LocalInvocationID.x;
+    if (localID == 0) {
+        groupCounter = 0;
+        groupOffset = 0;
     }
 
-    //     params[id].instance_count = 0;
-    // } else {
-    //     params[id].instance_count = 1;
-    // }
+    barrier();
 
-    uint index= atomicAdd(count, 1);
+    // recupere la bbox du ieme objet...
+    vec3 pmin= objects[globalID].pmin;
+    vec3 pmax= objects[globalID].pmax;
 
-    // params[index].vertex_count= 100;
-    params[index].vertex_count= objects[id].vertex_count;
-    params[index].instance_count= 1;
-    params[index].vertex_base= objects[id].vertex_base;
-    params[index].instance_base= 0;
+    // endroit ou on va ecrire la variable si elle valide le prédicat.
+    int threadOffset = -1;
+    if (isBoxVisible(world2projection, projection2world, pmin, pmax))
+        threadOffset = int(atomicAdd(groupCounter, 1));
 
-    remap[index]= id;
+    barrier();
+    if (localID == 0)
+        groupOffset = atomicAdd(count, groupCounter);
+    barrier();
+
+    if (threadOffset != -1) {
+        uint index = groupOffset + threadOffset;
+        params[index].vertex_count= objects[globalID].vertex_count;
+        params[index].instance_count= 1;
+        params[index].vertex_base= objects[globalID].vertex_base;
+        params[index].instance_base= 0;
+
+        remap[index]= globalID;
+    }
 }
 
 #endif

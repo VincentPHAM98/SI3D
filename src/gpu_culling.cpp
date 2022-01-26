@@ -408,7 +408,7 @@ class TP : public AppTime {
         m_frustumCamera.lookat(pmin, pmax);
         m_camera.move(-100.);
 
-        m_boxes = BBox(pmin, pmax).subdivide((pmax.x - pmin.x) / 10.);
+        m_boxes = BBox(pmin, pmax).subdivide((pmax.z - pmin.z) / 10.);
 
         // trouver a quelle box chaque triangle appartient
         std::vector<unsigned int> triangleBoxIdx(m_objet.triangle_count(), 0);
