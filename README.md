@@ -1,6 +1,6 @@
 ORAN Mikail p1608112
 
-Ceci est mon rendu pour l'UE Programmation cartes graphiques. Seulement la partie 2 du frustum culling sur carte graphique est réalisée.
+Ceci est mon rendu pour l'UE Programmation cartes graphiques. Seulement la partie 2 du frustum culling sur carte graphique est réalisée. La cohérence est respectée et les thread du compute shader ne font pas tous d'opérations atomiques sur le compteur global.
 
 Les fichiers sont `gpu_culling.cpp`, `gpu_culling_compute.glsl` et `gpu_culling.glsl`.
 
